@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request ,redirect, url_for, flash
+from flask import Flask, render_template, request ,redirect, url_for, flash, jsonify
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, scoped_session
@@ -216,6 +216,30 @@ def deleteMenuItem(restaurant_id, menu_id):
         session.commit()
         flash('Deleted the menu item successfully')
         return redirect(url_for('restaurantMenu', restaurant_id = restaurant_id))
+
+#API end points
+
+@app.route('/restaurants/<int:restaurant_id>/menu/JSON')
+def restaurantMenuJSON(restaurant_id):
+    MenuItems = session.query(MenuItem).filter_by(restaurant_id = restaurant_id).all()
+    return jsonify(MenuItems=[i.serialize for i in MenuItems])
+
+@app.route('/restaurants/JSON')
+def restaurantsListJSON():
+    restaurants = session.query(Restaurant).all()
+    return jsonify(restaurants=[i.serialize for i in restaurants])
+
+@app.route('/restaurants/<int:restaurant_id>/menu/<int:menu_id>/JSON')
+def restaurantMenuItem(restaurant_id, menu_id):
+    sqlalchemy_obj = session.query(Restaurant).filter_by(id = restaurant_id)
+    if sqlalchemy_obj.count() == 0:
+        return jsonify(restaurants=[])
+    sqlalchemy_obj = session.query(MenuItem).filter_by(id = menu_id)
+    if sqlalchemy_obj.count() == 0:
+        return jsonify(restaurants=[])
+    items = sqlalchemy_obj
+    return jsonify(MenuItem=[i.serialize for i in items])
+
 
 
 if __name__ == '__main__':
