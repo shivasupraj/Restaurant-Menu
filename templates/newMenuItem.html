@@ -3,9 +3,11 @@
         <h2>Add new item to menu for {{ restaurant.name }}</h2>
         <form action={{ url_for('addMenuItem', restaurant_id = restaurant.id) }} method="POST"> 
                 <p>Name:</p>
-
-                <input type='text' size='30' name='name'>
-                
+                <input type='text' size='30' name='menu_name'>
+                <p>description</p>
+                <input type="text" size='60' name='description'>
+                <p>price</p>
+                <input type="number" size='30' namr='price'>
                 <input type='submit' value='Create'>
         </form>
     </body>
