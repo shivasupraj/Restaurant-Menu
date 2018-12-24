@@ -117,6 +117,36 @@ def gconnect():
     print ("done!")
     return output
 
+@app.route('/gdisconnect')
+def gdisconnect():
+    access_token = login_session.get('access_token')
+    if access_token is None:
+        print('Access Token is None')
+        response = make_response(json.dumps('Current user not connected.'), 401)
+        response.headers['Content-Type'] = 'application/json'
+        return response
+    print('In gdisconnect access token is %s', access_token)
+    print('User name is: ')
+    print(login_session['username'])
+    url = 'https://accounts.google.com/o/oauth2/revoke?token=%s' % login_session['access_token']
+    h = httplib2.Http()
+    result = h.request(url, 'GET')[0]
+    print('result is ')
+    print(result)
+    if result['status'] == '200':
+        del login_session['access_token']
+        del login_session['gplus_id']
+        del login_session['username']
+        del login_session['email']
+        del login_session['picture']
+        response = make_response(json.dumps('Successfully disconnected.'), 200)
+        response.headers['Content-Type'] = 'application/json'
+        return response
+    else:
+        response = make_response(json.dumps('Failed to revoke token for given user.', 400))
+        response.headers['Content-Type'] = 'application/json'
+        return response
+
 @app.route('/')
 @app.route('/restaurants')
 def restaurantsList():
@@ -127,6 +157,9 @@ def restaurantsList():
 
 @app.route('/restaurants/new', methods = ['GET', 'POST'])
 def newRestaurant():
+    if 'username' not in login_session:
+        return redirect('/login')
+
     if request.method == 'GET':
         return render_template('newRestaurant.html')
     else:
@@ -145,6 +178,9 @@ def newRestaurant():
 
 @app.route('/restaurants/<int:restaurant_id>/edit', methods = ['GET', 'POST'])
 def editRestaurant(restaurant_id):
+    if 'username' not in login_session:
+        return redirect('/login')
+        
     if request.method == 'GET':
         print(request.form)
         sqlalchemy_obj = session.query(Restaurant).filter_by(id = restaurant_id)
@@ -176,6 +212,9 @@ def editRestaurant(restaurant_id):
 
 @app.route('/restaurants/<int:restaurant_id>/delete', methods = ['GET', 'POST'])
 def deleteRestaurant(restaurant_id):
+    if 'username' not in login_session:
+        return redirect('/login')
+        
     if request.method == 'GET':
         sqlalchemy_obj = session.query(Restaurant).filter_by(id = restaurant_id)
         if sqlalchemy_obj.count() == 0:
@@ -198,7 +237,7 @@ def deleteRestaurant(restaurant_id):
 
 
 @app.route('/restaurants/<int:restaurant_id>/menu')
-def restaurantMenu(restaurant_id):
+def restaurantMenu(restaurant_id):        
     sqlalchemy_obj = session.query(Restaurant).filter_by(id = restaurant_id)
     if sqlalchemy_obj.count() == 0:
         flash('No menu available for this restaurant')
@@ -213,6 +252,9 @@ def restaurantMenu(restaurant_id):
 
 @app.route('/restaurants/<int:restaurant_id>/menu/new', methods = ['GET', 'POST'])
 def addMenuItem(restaurant_id):
+    if 'username' not in login_session:
+        return redirect('/login')
+        
     if request.method == 'GET':
         sqlalchemy_obj = session.query(Restaurant).filter_by(id = restaurant_id)
         if sqlalchemy_obj.count() == 0:
@@ -244,6 +286,9 @@ def addMenuItem(restaurant_id):
 
 @app.route('/restaurants/<int:restaurant_id>/menu/<int:menu_id>/edit', methods = ['GET', 'POST'])
 def editMenuItem(restaurant_id, menu_id):
+    if 'username' not in login_session:
+        return redirect('/login')
+        
     if request.method == 'GET':
         sqlalchemy_obj = session.query(Restaurant).filter_by(id = restaurant_id)
         if sqlalchemy_obj.count() == 0:
@@ -283,6 +328,9 @@ def editMenuItem(restaurant_id, menu_id):
 
 @app.route('/restaurants/<int:restaurant_id>/menu/<int:menu_id>/delete', methods = ['GET', 'POST'])
 def deleteMenuItem(restaurant_id, menu_id):
+    if 'username' not in login_session:
+        return redirect('/login')
+        
     if request.method == 'GET':
         sqlalchemy_obj = session.query(Restaurant).filter_by(id = restaurant_id)
         if sqlalchemy_obj.count() == 0:
