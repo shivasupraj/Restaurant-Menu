@@ -13,11 +13,11 @@ import requests
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, scoped_session
 
-from database_setup import Restaurant, Base, MenuItem
+from database_setup import Restaurant, Base, MenuItem, User
 
 CLIENT_ID = json.loads(open('client_secrets.json', 'r').read())['web']['client_id']
 
-engine = create_engine('sqlite:///restaurantmenu.db')
+engine = create_engine('sqlite:///restaurantmenuwithusers.db')
 # Bind the engine to the metadata of the Base class so that the
 # declaratives can be accessed through a DBSession instance
 Base.metadata.bind = engine
@@ -106,6 +106,11 @@ def gconnect():
     login_session['picture'] = data['picture']
     login_session['email'] = data['email']
 
+    user_id = getUserID(login_session['email']) 
+    if user_id is None:
+        user_id = createUser(login_session) 
+    login_session['user_id'] = user_id
+
     output = ''
     output += '<h1>Welcome, '
     output += login_session['username']
@@ -125,7 +130,7 @@ def gdisconnect():
         response = make_response(json.dumps('Current user not connected.'), 401)
         response.headers['Content-Type'] = 'application/json'
         return response
-    print('In gdisconnect access token is %s', access_token)
+    print('In gdisconnect access token is {}'.format(access_token))
     print('User name is: ')
     print(login_session['username'])
     url = 'https://accounts.google.com/o/oauth2/revoke?token=%s' % login_session['access_token']
@@ -153,23 +158,29 @@ def restaurantsList():
     restaurants = session.query(Restaurant).all()
     if len(restaurants) == 0:
         flash('Could n\'t load any restaurants')
-    return render_template('restaurants.html', restaurants = restaurants)
+    user = ''
+    if 'username' in login_session:
+        user = login_session['username']
+    return render_template('restaurants.html', restaurants = restaurants, creator = user)
 
 @app.route('/restaurants/new', methods = ['GET', 'POST'])
 def newRestaurant():
+    user = ''
     if 'username' not in login_session:
         return redirect('/login')
+    else:
+        user = login_session['username']
 
     if request.method == 'GET':
-        return render_template('newRestaurant.html')
+        return render_template('newRestaurant.html', username = user)
     else:
         form = request.form
-        if 'restaurant_name' in form:
-            restaurant_name = form['restaurant_name']
+        if 'name' in form:
+            restaurant_name = form['name']
         else:
             flash('Could n\'t add the new restaurant ')
             return redirect(url_for('restaurantsList'))
-        restaurant = Restaurant(name = restaurant_name)
+        restaurant = Restaurant(name = restaurant_name, user_id = login_session['user_id'])
         session.add(restaurant)
         session.commit()
         flash('Added the new restaurant succesfully')
@@ -190,8 +201,8 @@ def editRestaurant(restaurant_id):
         return render_template('editRestaurant.html', restaurant = restaurant)
     else:
         form = request.form
-        if len(form) > 0 and 'restaurant_name' in form:
-            restaurant_name = form['restaurant_name']
+        if len(form) > 0 and 'name' in form:
+            restaurant_name = form['name']
         else:
             flash('Could not update to the database')
             return redirect(url_for('restaurantsList'))
@@ -237,18 +248,24 @@ def deleteRestaurant(restaurant_id):
 
 
 @app.route('/restaurants/<int:restaurant_id>/menu')
-def restaurantMenu(restaurant_id):        
+def restaurantMenu(restaurant_id):       
     sqlalchemy_obj = session.query(Restaurant).filter_by(id = restaurant_id)
     if sqlalchemy_obj.count() == 0:
         flash('No menu available for this restaurant')
         return redirect(url_for('restaurantsList'))
     restaurant = sqlalchemy_obj.one()
     sqlalchemy_obj = session.query(MenuItem).filter_by(restaurant = restaurant)
-    if sqlalchemy_obj.count() == 0:
-        flash('No menu available for this restaurant')
-        return redirect(url_for('restaurantsList'))
-    items = sqlalchemy_obj
-    return render_template('menu.html', items = items, restaurant = restaurant)
+    user = session.query(User).filter_by(id = restaurant.user_id).one()
+    if 'username' in login_session and user.name == login_session['username']:
+        if sqlalchemy_obj.count() == 0:
+            return render_template('menu.html', items = {}, restaurant = restaurant, creator = user)
+        items = sqlalchemy_obj
+        return render_template('menu.html', items = items, restaurant = restaurant, creator = user)
+    else:
+        if sqlalchemy_obj.count() == 0:
+            return render_template('publicmenu.html', items = {}, restaurant = restaurant, creator = user)
+        items = sqlalchemy_obj
+        return render_template('publicmenu.html', items = items, restaurant = restaurant, creator = user)
 
 @app.route('/restaurants/<int:restaurant_id>/menu/new', methods = ['GET', 'POST'])
 def addMenuItem(restaurant_id):
@@ -270,15 +287,15 @@ def addMenuItem(restaurant_id):
         else:
             restaurant = sqlalchemy_obj.one()
         form = request.form
-        if len(form) > 0 and 'menu_name' in form:
-            menu_name = form['menu_name']
+        if len(form) > 0 and 'name' in form:
+            menu_name = form['name']
         else:
             flash('Cannot add the menu item to menu')
-            return redirect(url_for('restaurantsList'))
+            return redirect(url_for('restaurantMenu', restaurant_id = restaurant_id))
         description = form['description'] if 'description' in form else None
         price =  '$' + str(form['price']) if 'price' in form else None
         course = form['course'] if 'course' in form else None
-        menu_item = MenuItem(name = menu_name, description = description, price = price, course = course, restaurant = restaurant)
+        menu_item = MenuItem(name = menu_name, description = description, price = price, course = course, restaurant_id=restaurant_id, user_id=restaurant.user_id)
         session.add(menu_item)
         session.commit()
         flash('Added the menu item to the menu')
@@ -312,8 +329,8 @@ def editMenuItem(restaurant_id, menu_id):
             flash('Could not update the menu item to the menu')
             return redirect(url_for('restaurantMenu', restaurant_id = restaurant_id))
         print(menu.name)
-        if 'menu_name' in form:
-            menu.name = form['menu_name'] 
+        if 'name' in form:
+            menu.name = form['name'] 
         if 'description' in form:
             menu.description = form['description'] 
         if 'price' in form:
@@ -376,6 +393,25 @@ def restaurantMenuItem(restaurant_id, menu_id):
         return jsonify(restaurants=[])
     items = sqlalchemy_obj
     return jsonify(MenuItem=[i.serialize for i in items])
+
+
+def createUser(login_session):
+    newUser = User(name = login_session['username'], email = login_session['email'], picture = login_session['picture'])
+    session.add(newUser)
+    session.commit()
+    user = session.query(User).filter_by(email = login_session['email']).one()
+    return user.id
+
+def getUserInfo(user_id):
+    user = session.query(User).filter_by(id = user_id).one()
+    return user
+
+def getUserID(email):
+    try:
+        user = session.query(User).filter_by(email = email).one()
+        return user.id
+    except:
+        return None
 
 
 
